@@ -1,0 +1,24 @@
+{
+
+    "appbarText":"Peace Time",
+    "zikrDeleteTitle":"Warning",
+    "zikrDeleteText":"Do You Want to Reset?",
+    "zikrDeleteConfirm":"Yes",
+    "zikrDeleteCancel":"No",
+    "qiblaLoadingError":"An Error Occurred in Location Services!",
+    "qiblaLoadingErrorButton":"Please try again!",
+    "defaultHadith":"<p>Ebû Hurairah radıyallahu anh said that he heard the Prophet (peace be upon him) saying:</p><p>“I swear, I ask God to forgive me and repent more than seventy times a day.”</p><p> Bukhari, Daavât 3. See also. Tirmidhi, Tafsir sura (47) Ibn Majah, Adab 57</p>",
+    "prayLocationSelect":"Location Select",
+    "praylocationFind":"Location Find",
+    "locationSelect":"(select)",
+    "prayCelendarMiladi":"Gregorian Celendar ",
+    "prayCelendarHicri":"Hijri Celendar ",
+    "prayImsak":"Dawn",
+    "prayGunes":"Sun",
+    "prayOgle":"Noon",
+    "prayIkindi":"Afternon",
+    "prayAksam":"Evening",
+    "prayYatsi":"Night"
+
+
+}

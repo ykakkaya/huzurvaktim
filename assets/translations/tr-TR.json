@@ -1,0 +1,24 @@
+{
+
+    "appbarText":"Huzur Vakti",
+    "zikrDeleteTitle":"Uyarı",
+    "zikrDeleteText":"Sıfırlamak İstiyor musunuz?",
+    "zikrDeleteConfirm":"Evet",
+    "zikrDeleteCancel":"Hayır",
+    "qiblaLoadingError":"Konum Servislerinde bir Hata Oluştu!",
+    "qiblaLoadingErrorButton":"Lütfen Tekrar Deneyiniz!",
+    "defaultHadith":"<p>Ebû Hureyre radıyallahu anh, Rasûlullah sallallahu aleyhi ve sellem’i şöyle buyururken işittiğini söylemiştir:</p><p>“Vallahi ben günde yetmiş defadan fazla Allah’tan beni bağışlamasını diler, tövbe ederim.”</p><p> Buhârî, Daavât 3. Ayrıca bk. Tirmizî, Tefsîru sûre (47) İbni Mâce, Edeb 57</p>",
+    "prayLocationSelect":"Konum Seç",
+    "praylocationFind":"Konumumu Bul",
+    "locationSelect":"Seç",
+    "prayCelendarMiladi":"Miladi Takvim : ",
+    "prayCelendarHicri":"Hicri Takvim : ",
+    "prayImsak":"İmsak",
+    "prayGunes":"Güneş",
+    "prayOgle":"Öğle",
+    "prayIkindi":"İkindi",
+    "prayAksam":"Akşam",
+    "prayYatsi":"Yatsı"
+
+
+}
