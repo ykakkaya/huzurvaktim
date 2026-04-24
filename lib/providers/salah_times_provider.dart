@@ -139,6 +139,25 @@ class SalahTimesNotifier extends Notifier<SalahTimesState> {
           yatsi: times.yatsi,
           enabledPrayers: enabledPrayers,
         );
+
+        // Yarının vakitlerini de zamanla (workmanager çalışmazsa yedek)
+        final tomorrow = DateTime(now.year, now.month, now.day + 1);
+        final tomorrowTimes = await salahTimeDatabaseHelper.getOne(
+          tomorrow.toString(),
+          districtId,
+        );
+        if (tomorrowTimes != null) {
+          NotificationService.schedulePrayerNotifications(
+            imsak: tomorrowTimes.imsak,
+            gunes: tomorrowTimes.gunes,
+            ogle: tomorrowTimes.ogle,
+            ikindi: tomorrowTimes.ikindi,
+            aksam: tomorrowTimes.aksam,
+            yatsi: tomorrowTimes.yatsi,
+            date: tomorrow,
+            enabledPrayers: enabledPrayers,
+          );
+        }
       }
     }
   }

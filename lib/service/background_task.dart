@@ -55,7 +55,7 @@ void callbackDispatcher() {
         for (final k in _prayerKeys) k: prefs.getBool('notify_$k') ?? true,
       };
 
-      // Bildirimleri zamanla
+      // Bugünün bildirimlerini zamanla
       await NotificationService.schedulePrayerNotifications(
         imsak:  times.imsak,
         gunes:  times.gunes,
@@ -65,6 +65,23 @@ void callbackDispatcher() {
         yatsi:  times.yatsi,
         enabledPrayers: enabledPrayers,
       );
+
+      // Yarının vakitlerini de zamanla (workmanager yedek güvencesi)
+      final tomorrow = DateTime(now.year, now.month, now.day + 1);
+      final tomorrowKey = tomorrow.toString();
+      final tomorrowTimes = await salahDb.getOne(tomorrowKey, info.lastSelectedDistrictId);
+      if (tomorrowTimes != null) {
+        await NotificationService.schedulePrayerNotifications(
+          imsak:  tomorrowTimes.imsak,
+          gunes:  tomorrowTimes.gunes,
+          ogle:   tomorrowTimes.ogle,
+          ikindi: tomorrowTimes.ikindi,
+          aksam:  tomorrowTimes.aksam,
+          yatsi:  tomorrowTimes.yatsi,
+          date:   tomorrow,
+          enabledPrayers: enabledPrayers,
+        );
+      }
     } catch (e, stackTrace) {
       debugPrint('[BackgroundTask] ERROR: $e');
       debugPrint('[BackgroundTask] $stackTrace');

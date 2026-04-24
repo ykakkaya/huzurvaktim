@@ -45,6 +45,12 @@ class NotificationService {
             AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
 
+    // Android 12+ exact alarm izni (SCHEDULE_EXACT_ALARM)
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestExactAlarmsPermission();
+
     _initialized = true;
   }
 
@@ -58,6 +64,7 @@ class NotificationService {
     required String? ikindi,
     required String? aksam,
     required String? yatsi,
+    DateTime? date, // null = bugün
     Map<String, bool> enabledPrayers = const {
       'imsak': true,
       'gunes': true,
@@ -88,11 +95,18 @@ class NotificationService {
     };
 
     final now = tz.TZDateTime.now(tz.local);
+    final today = DateTime(now.year, now.month, now.day);
+    final targetDate = date ?? today;
+    final isToday = targetDate.year == today.year &&
+        targetDate.month == today.month &&
+        targetDate.day == today.day;
+    // Bugün için ID offset 0 (1-6), yarın için offset 10 (11-16)
+    final idOffset = isToday ? 0 : 10;
 
     for (final entry in vakitler.entries) {
       final key = entry.key;
       final timeStr = entry.value;
-      final id = _ids[key]!;
+      final id = _ids[key]! + idOffset;
 
       // Switch kapalıysa bildirimi iptal et
       if (enabledPrayers[key] != true) {
@@ -110,12 +124,12 @@ class NotificationService {
 
       final scheduledTime = tz.TZDateTime(
         tz.local,
-        now.year, now.month, now.day,
+        targetDate.year, targetDate.month, targetDate.day,
         hour, minute,
       );
 
-      // Geçmiş vakit → atla
-      if (scheduledTime.isBefore(now)) continue;
+      // Geçmiş vakit → atla (sadece bugün için kontrol et)
+      if (isToday && scheduledTime.isBefore(now)) continue;
 
       await _plugin.zonedSchedule(
         id,
