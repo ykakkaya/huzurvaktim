@@ -116,11 +116,16 @@ class _QiblahMapsState extends State<QiblahMaps> {
   }
 
   Future<Position?> _checkLocationStatus() async {
-    final locationStatus = await FlutterQiblah.checkLocationStatus();
-    if (locationStatus.enabled) {
-      return await Geolocator.getCurrentPosition();
+    try {
+      final locationStatus = await FlutterQiblah.checkLocationStatus();
+      if (locationStatus.enabled) {
+        return await Geolocator.getCurrentPosition();
+      }
+      return null;
+    } catch (e) {
+      print('Konum hatası: $e');
+      return null;
     }
-    return null;
   }
 
   void _updateCamera() async {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' show pi;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_qiblah/flutter_qiblah.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:geolocator/geolocator.dart';
@@ -24,11 +25,36 @@ class _QiblahCompassState extends State<QiblahCompass> {
 
   Stream<LocationStatus> get stream => _locationStreamController.stream;
 
+  bool _deviceSupportSensor = true;
 
   @override
   void initState() {
     super.initState();
-    _checkLocationStatus();
+    _initQiblah();
+  }
+
+  Future<void> _initQiblah() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        final support = await FlutterQiblah.androidDeviceSensorSupport();
+        if (mounted) {
+          setState(() {
+            _deviceSupportSensor = support ?? false;
+          });
+        }
+        if (_deviceSupportSensor) {
+          _checkLocationStatus();
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _deviceSupportSensor = false;
+          });
+        }
+      }
+    } else {
+      _checkLocationStatus();
+    }
   }
 
   @override
@@ -40,6 +66,21 @@ class _QiblahCompassState extends State<QiblahCompass> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_deviceSupportSensor) {
+      return Container(
+        color: ProjectColor.backgroundColor,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(16.0),
+        child: const Center(
+          child: Text(
+            "Bu cihazda pusula sensörü (magnetometer) bulunmuyor.\nKıble yönü belirlenemiyor.",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.red, fontSize: 16),
+          ),
+        ),
+      );
+    }
+
     return Container(
       color: ProjectColor.backgroundColor,
       alignment: Alignment.center,
@@ -49,6 +90,12 @@ class _QiblahCompassState extends State<QiblahCompass> {
         builder: (context, AsyncSnapshot<LocationStatus> snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const LoadingIndicator();
+          }
+          if (snapshot.hasError) {
+            return LocationErrorWidget(
+              error: snapshot.error.toString(),
+              callback: _checkLocationStatus,
+            );
           }
           if (snapshot.data?.enabled == true) {
             switch (snapshot.data!.status) {
@@ -91,14 +138,24 @@ class _QiblahCompassState extends State<QiblahCompass> {
   }
 
   Future<void> _checkLocationStatus() async {
-    final locationStatus = await FlutterQiblah.checkLocationStatus();
-    if (locationStatus.enabled &&
-        locationStatus.status == LocationPermission.denied) {
-      await FlutterQiblah.requestPermissions();
-      final s = await FlutterQiblah.checkLocationStatus();
-      _locationStreamController.sink.add(s);
-    } else {
-      _locationStreamController.sink.add(locationStatus);
+    try {
+      final locationStatus = await FlutterQiblah.checkLocationStatus();
+      if (locationStatus.enabled &&
+          locationStatus.status == LocationPermission.denied) {
+        await FlutterQiblah.requestPermissions();
+        final s = await FlutterQiblah.checkLocationStatus();
+        if (mounted) {
+          _locationStreamController.sink.add(s);
+        }
+      } else {
+        if (mounted) {
+          _locationStreamController.sink.add(locationStatus);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        _locationStreamController.sink.addError('Konum servisi hatası: ${e.toString()}');
+      }
     }
   }
 }
@@ -123,13 +180,16 @@ class QiblahCompassWidget extends StatelessWidget {
           return const LoadingIndicator();
         }
         if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              "Pusula hatası: ${snapshot.error.toString()}\n(Not: Simülatörlerde pusula sensörü çalışmaz)",
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.red),
-            ),
+          return LocationErrorWidget(
+            error: "Pusula sensörü kullanılamıyor.\n(Not: Bazı cihazlarda magnetometer sensörü bulunmayabilir)",
+            callback: () {
+              // Retry loading
+            },
           );
+        }
+
+        if (snapshot.data == null) {
+          return const LoadingIndicator();
         }
 
         final qiblahDirection = snapshot.data!;
@@ -146,10 +206,6 @@ class QiblahCompassWidget extends StatelessWidget {
               alignment: Alignment.center,
               child: _needleSvg,
             ),
-            // Positioned(
-            //   bottom: 8,
-            //   child: Text("${qiblahDirection.offset.toStringAsFixed(3)}°"),
-            // )
           ],
         );
       },
