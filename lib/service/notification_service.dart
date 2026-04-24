@@ -1,6 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:flutter_timezone/flutter_timezone.dart';
 
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
@@ -19,18 +20,12 @@ class NotificationService {
   static Future<void> init() async {
     if (_initialized) return;
     tz.initializeTimeZones();
-    // Sistem timezone'unu kullan — cihazın yerel saatiyle senkron
-    final String localTz = DateTime.now().timeZoneName;
     try {
-      tz.setLocalLocation(tz.getLocation(localTz));
+      final String timeZoneName = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(timeZoneName));
     } catch (_) {
-      // Sistem tz adı tanınmazsa (örn. "GMT+3") offset ile fallback
-      final offsetHours = DateTime.now().timeZoneOffset.inHours;
-      final fallback = tz.timeZoneDatabase.locations.values.firstWhere(
-        (loc) => loc.currentTimeZone.offset == offsetHours * 3600000,
-        orElse: () => tz.UTC,
-      );
-      tz.setLocalLocation(fallback);
+      // Türk kullanıcılar için güvenli fallback
+      tz.setLocalLocation(tz.getLocation('Europe/Istanbul'));
     }
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -54,7 +49,8 @@ class NotificationService {
   }
 
   /// Bugünün namaz vakitleri için bildirim zamanla.
-  /// Geçmiş vakitler atlanır.
+  /// [enabledPrayers]: hangi vakitlerin bildirimi açık olduğunu belirtir.
+  /// Geçmiş vakitler atlanır; kapalı vakitler iptal edilir.
   static Future<void> schedulePrayerNotifications({
     required String? imsak,
     required String? gunes,
@@ -62,6 +58,14 @@ class NotificationService {
     required String? ikindi,
     required String? aksam,
     required String? yatsi,
+    Map<String, bool> enabledPrayers = const {
+      'imsak': true,
+      'gunes': true,
+      'ogle': true,
+      'ikindi': true,
+      'aksam': true,
+      'yatsi': true,
+    },
   }) async {
     await init();
 
@@ -83,14 +87,19 @@ class NotificationService {
       'yatsi': 'Yatsı',
     };
 
-    // Önce hepsini iptal et
-    await cancelAll();
-
     final now = tz.TZDateTime.now(tz.local);
 
     for (final entry in vakitler.entries) {
       final key = entry.key;
       final timeStr = entry.value;
+      final id = _ids[key]!;
+
+      // Switch kapalıysa bildirimi iptal et
+      if (enabledPrayers[key] != true) {
+        await _plugin.cancel(id);
+        continue;
+      }
+
       if (timeStr == null || timeStr.isEmpty) continue;
 
       final parts = timeStr.split(':');
@@ -99,7 +108,7 @@ class NotificationService {
       final minute = int.tryParse(parts[1]);
       if (hour == null || minute == null) continue;
 
-      var scheduledTime = tz.TZDateTime(
+      final scheduledTime = tz.TZDateTime(
         tz.local,
         now.year, now.month, now.day,
         hour, minute,
@@ -109,7 +118,7 @@ class NotificationService {
       if (scheduledTime.isBefore(now)) continue;
 
       await _plugin.zonedSchedule(
-        _ids[key]!,
+        id,
         '🕌 ${names[key]} Vakti',
         '${names[key]} vakti girdi. Hayırlı olsun.',
         scheduledTime,

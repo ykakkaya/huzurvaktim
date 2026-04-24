@@ -81,8 +81,28 @@ class MyHomePage extends ConsumerStatefulWidget {
   ConsumerState<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends ConsumerState<MyHomePage> {
+class _MyHomePageState extends ConsumerState<MyHomePage>
+    with WidgetsBindingObserver {
   final _deviceSupport = FlutterQiblah.androidDeviceSensorSupport();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      BackgroundTask.registerNext();
+    }
+  }
 
   String _getAppBarTitle(int index) {
     switch (index) {

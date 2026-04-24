@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:huzurvakti/data/district_data.dart';
 import 'package:huzurvakti/service/notification_service.dart';
+import 'package:huzurvakti/providers/notification_prefs_provider.dart';
 import 'package:huzurvakti/data/salah_time_data.dart';
 import 'package:huzurvakti/models/country.dart';
 import 'package:huzurvakti/models/district.dart';
@@ -128,6 +129,7 @@ class SalahTimesNotifier extends Notifier<SalahTimesState> {
           times.miladiTarihKisa!.month == now.month &&
           times.miladiTarihKisa!.day == now.day;
       if (isToday) {
+        final enabledPrayers = ref.read(notificationPrefsProvider);
         NotificationService.schedulePrayerNotifications(
           imsak: times.imsak,
           gunes: times.gunes,
@@ -135,6 +137,7 @@ class SalahTimesNotifier extends Notifier<SalahTimesState> {
           ikindi: times.ikindi,
           aksam: times.aksam,
           yatsi: times.yatsi,
+          enabledPrayers: enabledPrayers,
         );
       }
     }

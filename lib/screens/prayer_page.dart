@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:huzurvakti/providers/clock_provider.dart';
 import 'package:huzurvakti/providers/salah_times_provider.dart';
+import 'package:huzurvakti/providers/notification_prefs_provider.dart';
 import 'package:huzurvakti/models/district_info.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:huzurvakti/utils/project_colors.dart';
@@ -226,6 +227,53 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
     return active ?? 'yatsi';
   }
 
+  /// Bir sonraki namaz vaktine kalan süreyi hesaplar.
+  /// Döner: (vakit adı, "Xsa Ydk Zsn" formatında string)
+  (String name, String countdown) _nextVakit(SalahTime times) {
+    final now = DateTime.now();
+    final nowSec = now.hour * 3600 + now.minute * 60 + now.second;
+
+    int toSec(String? t) {
+      if (t == null || t.isEmpty) return 0;
+      final parts = t.split(':');
+      if (parts.length < 2) return 0;
+      return (int.tryParse(parts[0]) ?? 0) * 3600 +
+          (int.tryParse(parts[1]) ?? 0) * 60;
+    }
+
+    final vakitler = [
+      ('İmsak', toSec(times.imsak)),
+      ('Güneş', toSec(times.gunes)),
+      ('Öğle', toSec(times.ogle)),
+      ('İkindi', toSec(times.ikindi)),
+      ('Akşam', toSec(times.aksam)),
+      ('Yatsı', toSec(times.yatsi)),
+    ];
+
+    // İlk gelecek vakti bul
+    for (final v in vakitler) {
+      if (v.$2 > nowSec) {
+        final diff = v.$2 - nowSec;
+        return (v.$1, _formatCountdown(diff));
+      }
+    }
+
+    // Tüm vakitler geçtiyse — yarın sabah imsakına kalan süre
+    final imsakSec = toSec(times.imsak);
+    final diff = 86400 - nowSec + imsakSec;
+    return ('İmsak', _formatCountdown(diff));
+  }
+
+  String _formatCountdown(int totalSec) {
+    final h = totalSec ~/ 3600;
+    final m = (totalSec % 3600) ~/ 60;
+    final s = totalSec % 60;
+    if (h > 0) {
+      return '${h}sa ${m.toString().padLeft(2, '0')}dk ${s.toString().padLeft(2, '0')}sn';
+    }
+    return '${m}dk ${s.toString().padLeft(2, '0')}sn';
+  }
+
   void showLocationSelector() {
     showModalBottomSheet(
       context: context,
@@ -248,13 +296,15 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(salahTimesProvider);
     final currentTime = ref.watch(clockProvider).value ?? '--:--:--';
+    final notifPrefs = ref.watch(notificationPrefsProvider);
     final times = state.salahTimes;
     final activeVakit = times != null ? _activeVakit(times) : null;
+    final nextVakit = times != null ? _nextVakit(times) : null;
 
     return SingleChildScrollView(
       child: Column(
         children: [
-          _buildHeader(state, currentTime),
+          _buildHeader(state, currentTime, nextVakit),
           if (_detectingLocation)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
@@ -280,14 +330,15 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
                   : const CircularProgressIndicator(color: ProjectColor.primary),
             )
           else if (times != null)
-            _buildPrayerList(times, activeVakit),
+            _buildPrayerList(times, activeVakit, notifPrefs),
           const SizedBox(height: 24),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(SalahTimesState state, String currentTime) {
+  Widget _buildHeader(SalahTimesState state, String currentTime,
+      (String, String)? nextVakit) {
     final topPad = MediaQuery.of(context).padding.top + 16;
     return Container(
       width: double.infinity,
@@ -297,7 +348,7 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
           end: Alignment.bottomRight,
           colors: [Color(0xFF0277BD), Color(0xFF0288D1), Color(0xFF039BE5)],
         ),
-        borderRadius: const BorderRadius.only(
+        borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(32),
           bottomRight: Radius.circular(32),
         ),
@@ -337,6 +388,25 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
                     letterSpacing: 2,
                   ),
                 ),
+                if (nextVakit != null) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.timer_outlined,
+                          color: Colors.white70, size: 14),
+                      const SizedBox(width: 5),
+                      Text(
+                        '${nextVakit.$1}\'e ${nextVakit.$2} kala',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 12),
                 GestureDetector(
                   onTap: showLocationSelector,
@@ -429,7 +499,8 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
     );
   }
 
-  Widget _buildPrayerList(SalahTime times, String? activeVakit) {
+  Widget _buildPrayerList(
+      SalahTime times, String? activeVakit, Map<String, bool> notifPrefs) {
     final prayers = [
       _PrayerItem(key: 'imsak', icon: Icons.brightness_3_rounded,  label: 'prayImsak',  time: times.imsak  ?? '--:--'),
       _PrayerItem(key: 'gunes', icon: Icons.wb_sunny_rounded,       label: 'prayGunes',  time: times.gunes  ?? '--:--'),
@@ -442,12 +513,15 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
-        children: prayers.map((p) => _buildPrayerCard(p, p.key == activeVakit)).toList(),
+        children: prayers
+            .map((p) => _buildPrayerCard(
+                p, p.key == activeVakit, notifPrefs[p.key] ?? true))
+            .toList(),
       ),
     );
   }
 
-  Widget _buildPrayerCard(_PrayerItem prayer, bool isActive) {
+  Widget _buildPrayerCard(_PrayerItem prayer, bool isActive, bool notifEnabled) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.only(bottom: 10),
@@ -507,6 +581,28 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
                 fontWeight: FontWeight.w600,
                 color: isActive ? Colors.white : ProjectColor.primaryDark,
                 letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Transform.scale(
+              scale: 0.75,
+              child: Switch(
+                value: notifEnabled,
+                onChanged: (_) {
+                  ref
+                      .read(notificationPrefsProvider.notifier)
+                      .toggle(prayer.key);
+                },
+                activeThumbColor: isActive ? Colors.white : ProjectColor.primary,
+                activeTrackColor: isActive
+                    ? Colors.white.withValues(alpha: 0.35)
+                    : ProjectColor.primary.withValues(alpha: 0.3),
+                inactiveThumbColor: isActive
+                    ? Colors.white.withValues(alpha: 0.5)
+                    : Colors.grey[400],
+                inactiveTrackColor: isActive
+                    ? Colors.white.withValues(alpha: 0.15)
+                    : Colors.grey[200],
               ),
             ),
           ],

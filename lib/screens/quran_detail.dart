@@ -215,7 +215,7 @@ class QuranDetailPage extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(20),
                     onTap: () {
                       final shareText =
-                          "${sure.isim} - $number. Ayet\n\n${ayet.textAr}\n\n${ayet.text}\n\nHuzur Vakti uygulamasından paylaşılmıştır.";
+                          "${sure.isim} - $number. Ayet\n\n${ayet.textAr}\n\n${ayet.text}";
                       SharePlus.instance.share(ShareParams(text: shareText));
                     },
                     child: Container(

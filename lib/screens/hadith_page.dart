@@ -81,7 +81,10 @@ class _HadithPageState extends ConsumerState<HadithPage> {
 
             const SizedBox(height: 16),
 
-            if (!state.isLoading && state.items.isNotEmpty)
+            if (!state.isLoading &&
+                state.items.isNotEmpty &&
+                (_angle % (2 * pi)) >= (pi / 2) &&
+                (_angle % (2 * pi)) < (3 * pi / 2))
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -109,7 +112,6 @@ class _HadithPageState extends ConsumerState<HadithPage> {
     await file.writeAsBytes(byteData.buffer.asUint8List());
     await SharePlus.instance.share(ShareParams(
       files: [XFile(file.path)],
-      text: 'Huzur Vakti uygulamasından paylaşılmıştır.',
     ));
   }
 
