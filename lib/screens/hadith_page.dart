@@ -22,6 +22,7 @@ class _HadithPageState extends ConsumerState<HadithPage> {
   bool _isBack = true;
   double _angle = 0;
   final _repaintKey = GlobalKey();
+  final _shareButtonKey = GlobalKey();
 
   void _flip() {
     // Ön yüzden arka yüze geçerken yeni hadis yükle
@@ -89,6 +90,7 @@ class _HadithPageState extends ConsumerState<HadithPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   IconButton(
+                    key: _shareButtonKey,
                     onPressed: () => _shareCardAsImage(),
                     icon: const Icon(Icons.share_rounded, size: 28),
                     color: ProjectColor.primary,
@@ -110,8 +112,14 @@ class _HadithPageState extends ConsumerState<HadithPage> {
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/hadith_share.png');
     await file.writeAsBytes(byteData.buffer.asUint8List());
+    Rect? shareRect;
+    final box = _shareButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null) {
+      shareRect = box.localToGlobal(Offset.zero) & box.size;
+    }
     await SharePlus.instance.share(ShareParams(
       files: [XFile(file.path)],
+      sharePositionOrigin: shareRect,
     ));
   }
 

@@ -211,19 +211,28 @@ class QuranDetailPage extends ConsumerWidget {
                 // Paylaş butonu
                 Material(
                   color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () {
-                      final shareText =
-                          "${sure.isim} - $number. Ayet\n\n${ayet.textAr}\n\n${ayet.text}";
-                      SharePlus.instance.share(ShareParams(text: shareText));
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      child: const Icon(
-                        Icons.ios_share_rounded,
-                        size: 18,
-                        color: Color(0xFF0288D1),
+                  child: Builder(
+                    builder: (btnCtx) => InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () {
+                        final shareText =
+                            "${sure.isim} - $number. Ayet\n\n${ayet.textAr}\n\n${ayet.text}";
+                        final box = btnCtx.findRenderObject() as RenderBox?;
+                        final shareRect = box != null
+                            ? box.localToGlobal(Offset.zero) & box.size
+                            : null;
+                        SharePlus.instance.share(ShareParams(
+                          text: shareText,
+                          sharePositionOrigin: shareRect,
+                        ));
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        child: const Icon(
+                          Icons.ios_share_rounded,
+                          size: 18,
+                          color: Color(0xFF0288D1),
+                        ),
                       ),
                     ),
                   ),
