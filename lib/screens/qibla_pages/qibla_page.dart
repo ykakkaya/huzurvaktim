@@ -16,7 +16,7 @@ class QiblahCompass extends StatefulWidget {
   const QiblahCompass({super.key});
 
   @override
-  _QiblahCompassState createState() => _QiblahCompassState();
+  State<QiblahCompass> createState() => _QiblahCompassState();
 }
 
 class _QiblahCompassState extends State<QiblahCompass> {
@@ -60,7 +60,6 @@ class _QiblahCompassState extends State<QiblahCompass> {
   @override
   void dispose() {
     _locationStreamController.close();
-    FlutterQiblah().dispose();
     super.dispose();
   }
 
@@ -160,7 +159,14 @@ class _QiblahCompassState extends State<QiblahCompass> {
   }
 }
 
-class QiblahCompassWidget extends StatelessWidget {
+class QiblahCompassWidget extends StatefulWidget {
+  const QiblahCompassWidget({super.key});
+
+  @override
+  State<QiblahCompassWidget> createState() => _QiblahCompassWidgetState();
+}
+
+class _QiblahCompassWidgetState extends State<QiblahCompassWidget> {
   final _compassSvg = SvgPicture.asset('assets/images/compass.svg');
   final _needleSvg = SvgPicture.asset(
     'assets/images/needle.svg',
@@ -169,12 +175,49 @@ class QiblahCompassWidget extends StatelessWidget {
     alignment: Alignment.center,
   );
 
-  QiblahCompassWidget({super.key});
+  Stream<QiblahDirection>? _stream;
+  String? _streamError;
+
+  @override
+  void initState() {
+    super.initState();
+    _initStream();
+  }
+
+  void _initStream() {
+    try {
+      setState(() {
+        _stream = FlutterQiblah.qiblahStream;
+        _streamError = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _streamError = e.toString();
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    FlutterQiblah().dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_streamError != null) {
+      return LocationErrorWidget(
+        error: "Pusula sensörü başlatılamadı.\n(Not: Bazı Samsung cihazlarda magnetometer sınırlaması olabilir)",
+        callback: _initStream,
+      );
+    }
+
+    if (_stream == null) return const LoadingIndicator();
+
     return StreamBuilder(
-      stream: FlutterQiblah.qiblahStream,
+      stream: _stream,
       builder: (_, AsyncSnapshot<QiblahDirection> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingIndicator();
@@ -182,9 +225,7 @@ class QiblahCompassWidget extends StatelessWidget {
         if (snapshot.hasError) {
           return LocationErrorWidget(
             error: "Pusula sensörü kullanılamıyor.\n(Not: Bazı cihazlarda magnetometer sensörü bulunmayabilir)",
-            callback: () {
-              // Retry loading
-            },
+            callback: _initStream,
           );
         }
 
