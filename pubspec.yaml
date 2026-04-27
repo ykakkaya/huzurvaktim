@@ -45,7 +45,7 @@ dependencies:
   flutter_svg: ^2.0.10
   google_maps_flutter: ^2.9.0
   geolocator: ^14.0.2
-  flutter_qiblah: ^3.2.0
+  flutter_compass_v2: ^1.0.3
 
   
   permission_handler: ^11.3.1
@@ -57,6 +57,7 @@ dependencies:
   google_fonts: ^8.0.2
   share_plus: ^12.0.2
   path_provider: ^2.1.2
+  flutter_card_swiper: ^7.2.0
   upgrader: ^11.4.0
   flutter_local_notifications: ^18.0.0
   timezone: ^0.9.4
@@ -64,9 +65,6 @@ dependencies:
   flutter_timezone: ^4.1.1
 
 
-
-dependency_overrides:
-  vector_math: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -92,6 +90,9 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/images/
+    - assets/images/cuma/
+    - assets/images/kandil-bayram/
+    - assets/images/genel/
     - assets/data.json
     - assets/translations/
 

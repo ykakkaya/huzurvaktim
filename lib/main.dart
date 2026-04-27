@@ -1,7 +1,5 @@
-import 'package:animated_bottom_navigation_bar/animated_bottom_navigation_bar.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_qiblah/flutter_qiblah.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,14 +8,13 @@ import 'package:huzurvakti/service/notification_service.dart';
 import 'package:huzurvakti/service/background_task.dart';
 import 'package:huzurvakti/providers/home_provider.dart';
 import 'package:huzurvakti/screens/hadith_page.dart';
-import 'package:huzurvakti/screens/qibla_pages/loading_error.dart';
-import 'package:huzurvakti/screens/qibla_pages/loading_indicator.dart';
 import 'package:huzurvakti/screens/prayer_page.dart';
-import 'package:huzurvakti/screens/qibla_pages/qibla_maps.dart';
 import 'package:huzurvakti/screens/qibla_pages/qibla_page.dart';
 import 'package:huzurvakti/screens/quran_page.dart';
 import 'package:huzurvakti/screens/zikr_page.dart';
+import 'package:huzurvakti/screens/messages_page.dart';
 import 'package:huzurvakti/utils/project_colors.dart';
+import 'package:flutter/foundation.dart';
 import 'package:upgrader/upgrader.dart';
 
 Future<void> main() async {
@@ -66,6 +63,9 @@ class MyApp extends StatelessWidget {
         upgrader: Upgrader(
           messages: _UpgraderTr(),
           durationUntilAlertAgain: const Duration(days: 1),
+          countryCode: 'tr',
+          languageCode: 'tr',
+          debugLogging: kDebugMode,
         ),
         dialogStyle: UpgradeDialogStyle.material,
         child: const MyHomePage(),
@@ -83,7 +83,6 @@ class MyHomePage extends ConsumerStatefulWidget {
 
 class _MyHomePageState extends ConsumerState<MyHomePage>
     with WidgetsBindingObserver {
-  final _deviceSupport = FlutterQiblah.androidDeviceSensorSupport();
 
   @override
   void initState() {
@@ -111,6 +110,7 @@ class _MyHomePageState extends ConsumerState<MyHomePage>
       case 2: return "Zikirmatik";
       case 3: return "Namaz Vakitleri";
       case 4: return "Günün Hadisi";
+      case 5: return "Mesajlar";
       default: return "Huzur Vakti";
     }
   }
@@ -146,28 +146,31 @@ class _MyHomePageState extends ConsumerState<MyHomePage>
         decoration: const BoxDecoration(
           boxShadow: [
             BoxShadow(
-              color: Color(0x1A000000), // siyah %10
+              color: Color(0x1A000000),
               blurRadius: 10,
               offset: Offset(0, -2),
             ),
           ],
         ),
-        child: AnimatedBottomNavigationBar(
+        child: BottomNavigationBar(
           backgroundColor: ProjectColor.bottomBar,
-          icons: const [
-            Icons.menu_book_rounded,
-            Icons.explore_rounded,
-            Icons.fingerprint_rounded,
-            Icons.access_time_filled_rounded,
-            Icons.format_quote_rounded,
-          ],
-          activeIndex: currentIndex,
-          activeColor: ProjectColor.bottomBarActivaColor,
-          inactiveColor: ProjectColor.bottomBarInActiveColor,
-          gapLocation: GapLocation.none,
-          notchSmoothness: NotchSmoothness.softEdge,
-          iconSize: 28,
+          selectedItemColor: ProjectColor.bottomBarActivaColor,
+          unselectedItemColor: ProjectColor.bottomBarInActiveColor,
+          currentIndex: currentIndex,
           onTap: (index) => ref.read(currentIndexProvider.notifier).state = index,
+          type: BottomNavigationBarType.fixed,
+          showSelectedLabels: false,
+          showUnselectedLabels: false,
+          iconSize: 28,
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.menu_book_rounded), label: ''),
+            BottomNavigationBarItem(icon: Icon(Icons.explore_rounded), label: ''),
+            BottomNavigationBarItem(icon: Icon(Icons.fingerprint_rounded), label: ''),
+            BottomNavigationBarItem(icon: Icon(Icons.access_time_filled_rounded), label: ''),
+            BottomNavigationBarItem(icon: Icon(Icons.format_quote_rounded), label: ''),
+            BottomNavigationBarItem(icon: Icon(Icons.card_giftcard_rounded), label: ''),
+          ],
         ),
       ),
     );
@@ -178,23 +181,7 @@ class _MyHomePageState extends ConsumerState<MyHomePage>
       case 0:
         return const QuranPage();
       case 1:
-        return FutureBuilder(
-          future: _deviceSupport,
-          builder: (_, AsyncSnapshot<bool?> snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const LoadingIndicator();
-            }
-            if (snapshot.hasError) {
-              return const LocationErrorWidget();
-            }
-
-            if (snapshot.data!) {
-              return const QiblahCompass();
-            } else {
-              return const QiblahMaps();
-            }
-          },
-        );
+        return const QiblahCompass();
 
       case 2:
         return const ZikrPage();
@@ -202,6 +189,8 @@ class _MyHomePageState extends ConsumerState<MyHomePage>
         return const PrayerTimesPage();
       case 4:
         return const HadithPage();
+      case 5:
+        return const MessagesPage();
       default:
         return const QuranPage();
     }

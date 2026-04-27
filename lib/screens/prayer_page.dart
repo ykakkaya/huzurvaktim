@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -57,7 +58,10 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
       }
 
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.low,
+          timeLimit: Duration(seconds: 15),
+        ),
       );
 
       // Nominatim reverse geocode
@@ -87,7 +91,8 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
                 style: GoogleFonts.poppins(fontSize: 13),
               ),
               action: SnackBarAction(label: 'Seç', onPressed: showLocationSelector),
-              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           );
@@ -110,7 +115,36 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
           .trim();
 
       await _matchAndSaveLocation(provinceName, rawCounty);
+    } on TimeoutException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Konum alınamadı (zaman aşımı). GPS\'in açık olduğundan emin olun.',
+              style: GoogleFonts.poppins(fontSize: 13),
+            ),
+            action: SnackBarAction(label: 'Manuel Seç', onPressed: showLocationSelector),
+            duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
     } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Konum tespit edilemedi. Lütfen manuel seçin.',
+              style: GoogleFonts.poppins(fontSize: 13),
+            ),
+            action: SnackBarAction(label: 'Manuel Seç', onPressed: showLocationSelector),
+            duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
       debugPrint('Auto location error: $e');
     } finally {
       if (mounted) setState(() => _detectingLocation = false);
@@ -152,8 +186,24 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
       if (s > bestCityScore) { bestCityScore = s; matchedCity = c; }
     }
 
-    // Şehir eşleşmesi sıfırsa kullanıcı manuel seçsin
-    if (bestCityScore == 0) return;
+    // Şehir eşleşmesi sıfırsa kullanıcıya bildir
+    if (bestCityScore == 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Konum veritabanında bulunamadı ($provinceName). Lütfen manuel seçin.',
+              style: GoogleFonts.poppins(fontSize: 13),
+            ),
+            action: SnackBarAction(label: 'Manuel Seç', onPressed: showLocationSelector),
+            duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+      return;
+    }
 
     await notifier.getAllDistricts(matchedCity.sehirId);
     final stateAfter = ref.read(salahTimesProvider);

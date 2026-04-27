@@ -222,8 +222,16 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_card_swiper:
+    dependency: "direct main"
+    description:
+      name: flutter_card_swiper
+      sha256: "895c6974729b51cf73a35f1b58ab57a0af3293131319e2cbccac3bc57ffcd69f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "7.2.0"
   flutter_compass_v2:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: flutter_compass_v2
       sha256: c17b1533a43f5192e73d2f475ec2c142cc1e193eba6a9b49433d1ab68d70606b
@@ -283,14 +291,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.20"
-  flutter_qiblah:
-    dependency: "direct main"
-    description:
-      name: flutter_qiblah
-      sha256: ef343208c2d30ab71f10ec04773099a90bf56f9e6887251a2b70af7fec3ca3ed
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.2.0"
   flutter_riverpod:
     dependency: "direct main"
     description:
@@ -1187,13 +1187,13 @@ packages:
     source: hosted
     version: "1.1.11+1"
   vector_math:
-    dependency: "direct overridden"
+    dependency: transitive
     description:
       name: vector_math
-      sha256: "47a1b32ee755c3fcffa33db52a7258c137f97bdb2209a1075be847809fac4ccf"
+      sha256: d530bd74fea330e6e364cda7a85019c434070188383e1cd8d9777ee586914c5b
       url: "https://pub.dev"
     source: hosted
-    version: "2.3.0"
+    version: "2.2.0"
   version:
     dependency: transitive
     description:

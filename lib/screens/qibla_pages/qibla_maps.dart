@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_qiblah/flutter_qiblah.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:huzurvakti/screens/qibla_pages/loading_error.dart';
@@ -117,13 +116,15 @@ class _QiblahMapsState extends State<QiblahMaps> {
 
   Future<Position?> _checkLocationStatus() async {
     try {
-      final locationStatus = await FlutterQiblah.checkLocationStatus();
-      if (locationStatus.enabled) {
-        return await Geolocator.getCurrentPosition();
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) return null;
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return null;
       }
-      return null;
+      return await Geolocator.getCurrentPosition();
     } catch (e) {
-      print('Konum hatası: $e');
       return null;
     }
   }

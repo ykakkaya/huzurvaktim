@@ -93,23 +93,37 @@ class SalahTimesNotifier extends Notifier<SalahTimesState> {
   }
 
   Future<void> getAllCities(int countryId) async {
+    // Listeyi temizle ki dropdown yükleniyor görünsün
+    state = state.copyWith(cityList: [], districtList: []);
     var cities = await cityDatabaseHelper.getAllCitiesByCountryId(countryId);
     if (cities.isEmpty) {
       var apiCities = await api.getAllCitiesByCountryId(countryId);
       await cityDatabaseHelper.insertCities(apiCities);
       cities = await cityDatabaseHelper.getAllCitiesByCountryId(countryId);
     }
-    state = state.copyWith(cityList: cities, selectedCountry: countryId);
+    final firstCityId = cities.isNotEmpty ? cities.first.sehirId : 0;
+    state = state.copyWith(
+      cityList: cities,
+      selectedCountry: countryId,
+      selectedCity: firstCityId,
+    );
   }
 
   Future<void> getAllDistricts(int cityId) async {
+    // Listeyi temizle ki dropdown yükleniyor görünsün
+    state = state.copyWith(districtList: []);
     var districts = await districtDatabaseHelper.getAllDistrictsByCityId(cityId);
     if (districts.isEmpty) {
       var apiDistricts = await api.getAllDisctrictByCityId(cityId);
       await districtDatabaseHelper.insertDistricts(apiDistricts);
       districts = await districtDatabaseHelper.getAllDistrictsByCityId(cityId);
     }
-    state = state.copyWith(districtList: districts, selectedCity: cityId);
+    final firstDistrictId = districts.isNotEmpty ? districts.first.ilceId : 0;
+    state = state.copyWith(
+      districtList: districts,
+      selectedCity: cityId,
+      selectedDistrict: firstDistrictId,
+    );
   }
 
   Future<void> getSalahTimesForADay(String miladi, int districtId) async {
