@@ -43,8 +43,9 @@ class QuranDetailPage extends ConsumerWidget {
   }
 
   Widget _buildSliverAppBar(BuildContext context, WidgetRef ref) {
+    final isTablet = MediaQuery.of(context).size.shortestSide >= 600;
     return SliverAppBar(
-      expandedHeight: 200,
+      expandedHeight: isTablet ? 240 : 200,
       pinned: true,
       backgroundColor: ProjectColor.primaryDark,
       leading: IconButton(
@@ -96,7 +97,7 @@ class QuranDetailPage extends ConsumerWidget {
             ),
             // İçerik
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 80, 20, 20),
+              padding: EdgeInsets.fromLTRB(20, isTablet ? 100 : 80, 20, 20),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [

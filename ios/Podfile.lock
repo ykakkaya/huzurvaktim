@@ -6,8 +6,6 @@ PODS:
     - Flutter
   - flutter_local_notifications (0.0.1):
     - Flutter
-  - flutter_qiblah (0.0.1):
-    - Flutter
   - flutter_timezone (0.0.1):
     - Flutter
   - geolocator_apple (1.2.0):
@@ -49,7 +47,6 @@ DEPENDENCIES:
   - Flutter (from `Flutter`)
   - flutter_compass_v2 (from `.symlinks/plugins/flutter_compass_v2/ios`)
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
-  - flutter_qiblah (from `.symlinks/plugins/flutter_qiblah/ios`)
   - flutter_timezone (from `.symlinks/plugins/flutter_timezone/ios`)
   - geolocator_apple (from `.symlinks/plugins/geolocator_apple/darwin`)
   - google_maps_flutter_ios (from `.symlinks/plugins/google_maps_flutter_ios/ios`)
@@ -76,8 +73,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_compass_v2/ios"
   flutter_local_notifications:
     :path: ".symlinks/plugins/flutter_local_notifications/ios"
-  flutter_qiblah:
-    :path: ".symlinks/plugins/flutter_qiblah/ios"
   flutter_timezone:
     :path: ".symlinks/plugins/flutter_timezone/ios"
   geolocator_apple:
@@ -106,7 +101,6 @@ SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_compass_v2: f7704b078814b705e76ae2bd48fe48ae6cd067df
   flutter_local_notifications: df98d66e515e1ca797af436137b4459b160ad8c9
-  flutter_qiblah: f69eeb708d127a2634073ab1f27771c979928f50
   flutter_timezone: ac3da59ac941ff1c98a2e1f0293420e020120282
   geolocator_apple: 66b711889fd333205763b83c9dcf0a57a28c7afd
   Google-Maps-iOS-Utils: 66d6de12be1ce6d3742a54661e7a79cb317a9321

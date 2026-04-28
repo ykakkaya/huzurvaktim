@@ -25,6 +25,7 @@ class ImageSwiperPage extends StatefulWidget {
 
 class _ImageSwiperPageState extends State<ImageSwiperPage> {
   final CardSwiperController _controller = CardSwiperController();
+  final GlobalKey _shareButtonKey = GlobalKey();
   List<String> _imagePaths = [];
   int _currentIndex = 0;
   bool _isSharing = false;
@@ -57,7 +58,16 @@ class _ImageSwiperPageState extends State<ImageSwiperPage> {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/shared_image.png');
       await file.writeAsBytes(bytes);
-      await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+      final box = _shareButtonKey.currentContext?.findRenderObject() as RenderBox?;
+      final origin = box != null
+          ? box.localToGlobal(Offset.zero) & box.size
+          : null;
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          sharePositionOrigin: origin,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isSharing = false);
     }
@@ -162,6 +172,7 @@ class _ImageSwiperPageState extends State<ImageSwiperPage> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 32, top: 4),
                   child: ElevatedButton.icon(
+                    key: _shareButtonKey,
                     onPressed: _isSharing ? null : _shareCurrentImage,
                     icon: _isSharing
                         ? const SizedBox(
