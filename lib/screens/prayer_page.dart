@@ -74,7 +74,7 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
           'lon': pos.longitude,
           'accept-language': 'tr',
         },
-        options: Options(headers: {'User-Agent': 'HuzurVakti/1.0'}),
+        options: Options(headers: {'User-Agent': 'NurHane/1.0'}),
       );
 
       final address = resp.data['address'] as Map<String, dynamic>?;

@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.a8" "\0"
-            VALUE "FileDescription", "huzurvakti" "\0"
+            VALUE "CompanyName", "com.ykakkaya" "\0"
+            VALUE "FileDescription", "NurHane" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "huzurvakti" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2024 com.a8. All rights reserved." "\0"
-            VALUE "OriginalFilename", "huzurvakti.exe" "\0"
-            VALUE "ProductName", "huzurvakti" "\0"
+            VALUE "InternalName", "NurHane" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2024 com.ykakkaya. All rights reserved." "\0"
+            VALUE "OriginalFilename", "nurhane.exe" "\0"
+            VALUE "ProductName", "NurHane" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

@@ -53,7 +53,7 @@ class MyApp extends StatelessWidget {
       localizationsDelegates: context.localizationDelegates,
       supportedLocales: context.supportedLocales,
       locale: context.deviceLocale,
-      title: "Huzur Vakti",
+      title: "NurHane",
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,
@@ -111,7 +111,7 @@ class _MyHomePageState extends ConsumerState<MyHomePage>
       case 3: return "Namaz Vakitleri";
       case 4: return "Günün Hadisi";
       case 5: return "Mesajlar";
-      default: return "Huzur Vakti";
+      default: return "NurHane";
     }
   }
 

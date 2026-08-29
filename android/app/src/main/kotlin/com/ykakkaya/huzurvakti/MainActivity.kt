@@ -1,4 +1,4 @@
-package com.a8.huzurvakti
+package com.ykakkaya.huzurvakti
 
 import io.flutter.embedding.android.FlutterActivity
 
