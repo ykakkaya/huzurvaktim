@@ -22,12 +22,7 @@ class QiblaStreamService {
 
   Future<void> _start() async {
     try {
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 15),
-        ),
-      );
+      final position = await _getPositionWithFallback();
 
       final offset = _bearingToKaaba(position.latitude, position.longitude);
 
@@ -56,6 +51,21 @@ class QiblaStreamService {
       );
     } catch (e) {
       _controller?.addError('Konum hatası: $e');
+    }
+  }
+
+  Future<Position> _getPositionWithFallback() async {
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 20),
+        ),
+      );
+    } on TimeoutException {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) return lastKnown;
+      rethrow;
     }
   }
 

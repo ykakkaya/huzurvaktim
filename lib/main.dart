@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,20 +16,29 @@ import 'package:huzurvakti/screens/qibla_pages/qibla_page.dart';
 import 'package:huzurvakti/screens/quran_page.dart';
 import 'package:huzurvakti/screens/zikr_page.dart';
 import 'package:huzurvakti/screens/messages_page.dart';
+import 'package:huzurvakti/screens/onboarding_page.dart';
 import 'package:huzurvakti/utils/project_colors.dart';
-import 'package:flutter/foundation.dart';
 import 'package:upgrader/upgrader.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Yakalanmayan hatalar uygulamayı kapatmasin — logla ve devam et
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('[FlutterError] ${details.exception}\n${details.stack}');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('[PlatformDispatcher] $error\n$stack');
+    return true;
+  };
 
   // Google Fonts'un runtime'da network isteği yapmasını engelle
   // Fontlar pubspec.yaml assets olarak tanımlanmalı
   GoogleFonts.config.allowRuntimeFetching = false;
 
   await EasyLocalization.ensureInitialized();
-  await NotificationService.init();
-  await BackgroundTask.init();
+
   final sharedPrefs = await SharedPreferences.getInstance();
 
   runApp(
@@ -59,17 +71,53 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: UpgradeAlert(
-        upgrader: Upgrader(
-          messages: _UpgraderTr(),
-          durationUntilAlertAgain: const Duration(days: 1),
-          countryCode: 'tr',
-          languageCode: 'tr',
-          debugLogging: kDebugMode,
-        ),
-        dialogStyle: UpgradeDialogStyle.material,
-        child: const MyHomePage(),
+      home: const _AppEntry(),
+    );
+  }
+}
+
+class _AppEntry extends ConsumerStatefulWidget {
+  const _AppEntry();
+
+  @override
+  ConsumerState<_AppEntry> createState() => _AppEntryState();
+}
+
+class _AppEntryState extends ConsumerState<_AppEntry> {
+  static const _onboardingCompletedKey = 'onboarding_completed_v1';
+  late bool _onboardingCompleted;
+
+  @override
+  void initState() {
+    super.initState();
+    final preferences = ref.read(sharedPreferencesProvider);
+    _onboardingCompleted =
+        preferences.getBool(_onboardingCompletedKey) ?? false;
+  }
+
+  Future<void> _completeOnboarding() async {
+    final preferences = ref.read(sharedPreferencesProvider);
+    await preferences.setBool(_onboardingCompletedKey, true);
+    if (mounted) {
+      setState(() => _onboardingCompleted = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_onboardingCompleted) {
+      return OnboardingPage(onComplete: _completeOnboarding);
+    }
+
+    return UpgradeAlert(
+      upgrader: Upgrader(
+        messages: _UpgraderTr(),
+        durationUntilAlertAgain: const Duration(days: 1),
+        countryCode: 'tr',
+        languageCode: 'tr',
       ),
+      dialogStyle: UpgradeDialogStyle.material,
+      child: const MyHomePage(),
     );
   }
 }
@@ -83,11 +131,32 @@ class MyHomePage extends ConsumerStatefulWidget {
 
 class _MyHomePageState extends ConsumerState<MyHomePage>
     with WidgetsBindingObserver {
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Once arayuzu goster; cihaz/ROM bagimli servisler acilisi engellemesin.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_initializeOptionalServices());
+    });
+  }
+
+  Future<void> _initializeOptionalServices() async {
+    try {
+      await NotificationService.init();
+      // Yalniz standart Android 13+ bildirim diyalogunu ac. Exact alarm ve
+      // pil optimizasyonu ekranlari Xiaomi/HyperOS'ta uygulamadan cikis gibi
+      // gorunebildigi icin acilista otomatik olarak tetiklenmez.
+      await NotificationService.requestNotificationPermission();
+    } catch (e, s) {
+      debugPrint('[startup] Notification service failed: $e\n$s');
+    }
+
+    try {
+      await BackgroundTask.init();
+    } catch (e, s) {
+      debugPrint('[startup] Background task failed: $e\n$s');
+    }
   }
 
   @override
@@ -98,49 +167,57 @@ class _MyHomePageState extends ConsumerState<MyHomePage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      BackgroundTask.registerNext();
+      unawaited(BackgroundTask.registerNext());
     }
   }
 
   String _getAppBarTitle(int index) {
     switch (index) {
-      case 0: return "Kur'an-ı Kerim";
-      case 1: return "Kıble Bulucu";
-      case 2: return "Zikirmatik";
-      case 3: return "Namaz Vakitleri";
-      case 4: return "Günün Hadisi";
-      case 5: return "Mesajlar";
-      default: return "NurHane";
+      case 0:
+        return "Kur'an-ı Kerim";
+      case 1:
+        return "Kıble Bulucu";
+      case 2:
+        return "Zikirmatik";
+      case 3:
+        return "Namaz Vakitleri";
+      case 4:
+        return "Günün Hadisi";
+      case 5:
+        return "Mesajlar";
+      default:
+        return "NurHane";
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final currentIndex = ref.watch(currentIndexProvider);
-    
+
     return Scaffold(
       backgroundColor: ProjectColor.backgroundColor,
       appBar: (currentIndex == 0 || currentIndex == 3)
-        ? null
-        : AppBar(
-            title: Text(
-              _getAppBarTitle(currentIndex),
-              style: GoogleFonts.philosopher(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 22,
+          ? null
+          : AppBar(
+              title: Text(
+                _getAppBarTitle(currentIndex),
+                style: GoogleFonts.philosopher(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                ),
+              ),
+              centerTitle: true,
+              backgroundColor: ProjectColor.appbarColor,
+              elevation: 0,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(20),
+                ),
               ),
             ),
-            centerTitle: true,
-            backgroundColor: ProjectColor.appbarColor,
-            elevation: 0,
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(
-                bottom: Radius.circular(20),
-              ),
-            ),
-          ),
       body: _getPage(currentIndex),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
@@ -157,19 +234,26 @@ class _MyHomePageState extends ConsumerState<MyHomePage>
           selectedItemColor: ProjectColor.bottomBarActivaColor,
           unselectedItemColor: ProjectColor.bottomBarInActiveColor,
           currentIndex: currentIndex,
-          onTap: (index) => ref.read(currentIndexProvider.notifier).state = index,
+          onTap: (index) =>
+              ref.read(currentIndexProvider.notifier).state = index,
           type: BottomNavigationBarType.fixed,
           showSelectedLabels: false,
           showUnselectedLabels: false,
           iconSize: 28,
           elevation: 0,
           items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.menu_book_rounded), label: ''),
-            BottomNavigationBarItem(icon: Icon(Icons.explore_rounded), label: ''),
-            BottomNavigationBarItem(icon: Icon(Icons.fingerprint_rounded), label: ''),
-            BottomNavigationBarItem(icon: Icon(Icons.access_time_filled_rounded), label: ''),
-            BottomNavigationBarItem(icon: Icon(Icons.format_quote_rounded), label: ''),
-            BottomNavigationBarItem(icon: Icon(Icons.card_giftcard_rounded), label: ''),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.menu_book_rounded), label: ''),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.explore_rounded), label: ''),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.fingerprint_rounded), label: ''),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.access_time_filled_rounded), label: ''),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.format_quote_rounded), label: ''),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.card_giftcard_rounded), label: ''),
           ],
         ),
       ),

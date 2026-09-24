@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:huzurvakti/models/country.dart';
 import 'package:huzurvakti/models/salah_time.dart';
 
@@ -22,7 +23,7 @@ class SalahTimesApi {
       }
       return responseList;
     } catch (e) {
-      print(e.toString());
+      debugPrint('[SalahTimesApi] countries: $e');
       throw Exception(e.toString());
     }
   }
@@ -41,7 +42,7 @@ class SalahTimesApi {
       }
       return responseList;
     } catch (e) {
-      print(e.toString());
+      debugPrint('[SalahTimesApi] cities: $e');
       throw Exception(e.toString());
     }
   }
@@ -60,7 +61,7 @@ class SalahTimesApi {
 
       return responseList;
     } catch (e) {
-      print(e.toString());
+      debugPrint('[SalahTimesApi] districts: $e');
       throw Exception(e.toString());
     }
   }
@@ -80,7 +81,7 @@ class SalahTimesApi {
 
       return responseList;
     } catch (e) {
-      print(e.toString());
+      debugPrint('[SalahTimesApi] prayer times: $e');
       throw Exception(e.toString());
     }
   }

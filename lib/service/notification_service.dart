@@ -1,12 +1,13 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
+  static bool _permissionsRequested = false;
 
   // Vakit id'leri — her gün aynı id ile üzerine yazılır
   static const _ids = {
@@ -18,12 +19,17 @@ class NotificationService {
     'yatsi': 6,
   };
 
+  static AndroidFlutterLocalNotificationsPlugin? get _android =>
+      _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+
+  /// Sadece plugin + timezone kurulumu. İzin istemez, açılışta güvenle çağrılır.
   static Future<void> init() async {
     if (_initialized) return;
     tz.initializeTimeZones();
     try {
-      final String timeZoneName = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(timeZoneName));
+      final timeZone = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(timeZone.identifier));
     } catch (_) {
       // Türk kullanıcılar için güvenli fallback
       tz.setLocalLocation(tz.getLocation('Europe/Istanbul'));
@@ -37,27 +43,37 @@ class NotificationService {
     );
 
     await _plugin.initialize(
-      const InitializationSettings(android: android, iOS: ios),
+      settings: const InitializationSettings(android: android, iOS: ios),
     );
 
-    // Android 13+ bildirim izni
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
-
-    // Android 12+ exact alarm izni (SCHEDULE_EXACT_ALARM)
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestExactAlarmsPermission();
-
-    // Battery optimization — bildirim gecikmelerini önlemek için
-    if (await Permission.ignoreBatteryOptimizations.isDenied) {
-      await Permission.ignoreBatteryOptimizations.request();
-    }
-
     _initialized = true;
+  }
+
+  /// Android 13+ standart bildirim izni. Özel sistem ayarlarını açmaz.
+  static Future<void> requestNotificationPermission() async {
+    if (_permissionsRequested) return;
+    _permissionsRequested = true;
+
+    await init();
+
+    try {
+      await _android?.requestNotificationsPermission();
+    } catch (e) {
+      debugPrint('[NotificationService] notification permission: $e');
+    }
+  }
+
+  /// Exact alarm izni yoksa inexact moda düş — aksi halde zonedSchedule
+  /// `exact_alarms_not_permitted` fırlatır (targetSdk 33+ cihazlarda varsayılan).
+  static Future<AndroidScheduleMode> _scheduleMode() async {
+    try {
+      final canExact = await _android?.canScheduleExactNotifications();
+      if (canExact == false) return AndroidScheduleMode.inexactAllowWhileIdle;
+    } catch (e) {
+      debugPrint('[NotificationService] canScheduleExact: $e');
+      return AndroidScheduleMode.inexactAllowWhileIdle;
+    }
+    return AndroidScheduleMode.exactAllowWhileIdle;
   }
 
   /// Bugünün namaz vakitleri için bildirim zamanla.
@@ -109,6 +125,8 @@ class NotificationService {
     // Bugün için ID offset 0 (1-6), yarın için offset 10 (11-16)
     final idOffset = isToday ? 0 : 10;
 
+    var scheduleMode = await _scheduleMode();
+
     for (final entry in vakitler.entries) {
       final key = entry.key;
       final timeStr = entry.value;
@@ -116,7 +134,11 @@ class NotificationService {
 
       // Switch kapalıysa bildirimi iptal et
       if (enabledPrayers[key] != true) {
-        await _plugin.cancel(id);
+        try {
+          await _plugin.cancel(id: id);
+        } catch (e) {
+          debugPrint('[NotificationService] cancel $id: $e');
+        }
         continue;
       }
 
@@ -130,40 +152,63 @@ class NotificationService {
 
       final scheduledTime = tz.TZDateTime(
         tz.local,
-        targetDate.year, targetDate.month, targetDate.day,
-        hour, minute,
+        targetDate.year,
+        targetDate.month,
+        targetDate.day,
+        hour,
+        minute,
       );
 
       // Geçmiş vakit → atla (sadece bugün için kontrol et)
       if (isToday && scheduledTime.isBefore(now)) continue;
 
-      await _plugin.zonedSchedule(
-        id,
-        '🕌 ${names[key]} Vakti',
-        '${names[key]} vakti girdi. Hayırlı olsun.',
-        scheduledTime,
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            'prayer_times',
-            'Namaz Vakitleri',
-            channelDescription: 'Namaz vakti bildirimleri',
-            importance: Importance.high,
-            priority: Priority.high,
-            icon: '@mipmap/ic_launcher',
-            playSound: true,
-            enableVibration: true,
-          ),
-          iOS: const DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: true,
-          ),
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-      );
+      try {
+        await _schedule(id, names[key]!, scheduledTime, scheduleMode);
+      } catch (e) {
+        debugPrint('[NotificationService] schedule $id: $e');
+        // Exact alarm izni çalışma anında geri alınmış olabilir → inexact'e düş
+        if (scheduleMode == AndroidScheduleMode.exactAllowWhileIdle) {
+          scheduleMode = AndroidScheduleMode.inexactAllowWhileIdle;
+          try {
+            await _schedule(id, names[key]!, scheduledTime, scheduleMode);
+          } catch (e2) {
+            debugPrint('[NotificationService] inexact fallback $id: $e2');
+          }
+        }
+      }
     }
+  }
+
+  static Future<void> _schedule(
+    int id,
+    String name,
+    tz.TZDateTime when,
+    AndroidScheduleMode mode,
+  ) {
+    return _plugin.zonedSchedule(
+      id: id,
+      title: '🕌 $name Vakti',
+      body: '$name vakti girdi. Hayırlı olsun.',
+      scheduledDate: when,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'prayer_times',
+          'Namaz Vakitleri',
+          channelDescription: 'Namaz vakti bildirimleri',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+          playSound: true,
+          enableVibration: true,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      androidScheduleMode: mode,
+    );
   }
 
   static Future<void> cancelAll() async {

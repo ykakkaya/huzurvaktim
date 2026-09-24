@@ -27,13 +27,14 @@ class QuranState {
       sureList: sureList ?? this.sureList,
       ayetList: ayetList ?? this.ayetList,
       selectedSure: selectedSure ?? this.selectedSure,
-      selectedSureObj: clearSureObj ? null : (selectedSureObj ?? this.selectedSureObj),
+      selectedSureObj:
+          clearSureObj ? null : (selectedSureObj ?? this.selectedSureObj),
     );
   }
 }
 
 class QuranNotifier extends Notifier<QuranState> {
-  final databaseManager = KuraniKerimDatabeManager();
+  final databaseManager = KuraniKerimDatabaseManager();
 
   @override
   QuranState build() {
@@ -52,7 +53,8 @@ class QuranNotifier extends Notifier<QuranState> {
 
   Future<void> getAyetList(int sureId, {Sure? sureObj}) async {
     final ayetList = await databaseManager.getAyetsBySure(sureId);
-    state = state.copyWith(ayetList: ayetList, selectedSure: sureId, selectedSureObj: sureObj);
+    state = state.copyWith(
+        ayetList: ayetList, selectedSure: sureId, selectedSureObj: sureObj);
   }
 
   void clearSelectedSure() {
@@ -60,4 +62,5 @@ class QuranNotifier extends Notifier<QuranState> {
   }
 }
 
-final quranProvider = NotifierProvider<QuranNotifier, QuranState>(QuranNotifier.new);
+final quranProvider =
+    NotifierProvider<QuranNotifier, QuranState>(QuranNotifier.new);

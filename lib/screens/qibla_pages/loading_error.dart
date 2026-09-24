@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
 class LocationErrorWidget extends StatelessWidget {
   final String? error;
-  final Function? callback;
+  final FutureOr<void> Function()? callback;
 
-  const LocationErrorWidget({Key? key, this.error, this.callback}) : super(key: key);
+  const LocationErrorWidget({super.key, this.error, this.callback});
 
   @override
   Widget build(BuildContext context) {
@@ -18,13 +20,20 @@ class LocationErrorWidget extends StatelessWidget {
         children: <Widget>[
           const Icon(Icons.location_off, size: 150, color: errorColor),
           box,
-          const Text(
-            "qiblaLoadingError",
-            style: TextStyle(color: errorColor, fontWeight: FontWeight.bold),
-          ).tr(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              error ?? 'qiblaLoadingError'.tr(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: errorColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
           box,
           ElevatedButton(
-            onPressed: callback != null ? () => callback!() : null,
+            onPressed: callback,
             child: const Text("qiblaLoadingErrorButton").tr(),
           ),
         ],

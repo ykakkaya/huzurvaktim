@@ -25,7 +25,13 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_initializePage());
+    });
+  }
+
+  Future<void> _initializePage() async {
+    try {
       final notifier = ref.read(salahTimesProvider.notifier);
       // Varsayılan Türkiye listelerini yükle (bottom sheet için)
       await notifier.getAllCountries();
@@ -35,9 +41,16 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
       // Kayıtlı konum yoksa otomatik algıla
       final state = ref.read(salahTimesProvider);
       if (state.userDistrictInfo == null) {
-        _autoDetectLocation();
+        await _autoDetectLocation();
       }
-    });
+    } catch (e, stackTrace) {
+      debugPrint('Prayer page initialization error: $e\n$stackTrace');
+      _showLocationMessage(
+        'Konum listeleri yüklenemedi. İnternet bağlantınızı kontrol edin.',
+        actionLabel: 'Tekrar Dene',
+        onAction: () => unawaited(_initializePage()),
+      );
+    }
   }
 
   // GPS + Nominatim reverse geocode → ilçe eşleştirme
@@ -46,23 +59,41 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
     setState(() => _detectingLocation = true);
 
     try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _showLocationMessage(
+          'Konum servisi kapalı. GPS\'i açıp tekrar deneyin.',
+          actionLabel: 'Ayarları Aç',
+          onAction: () => unawaited(Geolocator.openLocationSettings()),
+        );
+        return;
+      }
+
       // İzin kontrolü
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.deniedForever ||
-          permission == LocationPermission.denied) {
-        if (mounted) setState(() => _detectingLocation = false);
+
+      if (permission == LocationPermission.deniedForever) {
+        _showLocationMessage(
+          'Konum izni kalıcı olarak kapatılmış. Uygulama ayarlarından izin verin.',
+          actionLabel: 'Ayarları Aç',
+          onAction: () => unawaited(Geolocator.openAppSettings()),
+        );
         return;
       }
 
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.low,
-          timeLimit: Duration(seconds: 15),
-        ),
-      );
+      if (permission == LocationPermission.denied) {
+        _showLocationMessage(
+          'Konum izni verilmedi. Otomatik algılama için izin gereklidir.',
+          actionLabel: 'Tekrar Dene',
+          onAction: () => unawaited(_autoDetectLocation()),
+        );
+        return;
+      }
+
+      final pos = await _getPositionWithFallback();
 
       // Nominatim reverse geocode
       final dio = Dio();
@@ -74,27 +105,30 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
           'lon': pos.longitude,
           'accept-language': 'tr',
         },
-        options: Options(headers: {'User-Agent': 'NurHane/1.0'}),
+        options: Options(
+          headers: {'User-Agent': 'NurHane/1.2 (Android)'},
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
       );
 
-      final address = resp.data['address'] as Map<String, dynamic>?;
-      if (address == null) return;
+      final responseData = resp.data;
+      if (responseData is! Map || responseData['address'] is! Map) {
+        throw const FormatException('Adres bilgisi bulunamadı.');
+      }
+      final address = Map<String, dynamic>.from(
+        responseData['address'] as Map,
+      );
 
       // Türkiye dışındaysa (emülatör, yurt dışı) uyar
-      final countryCode = (address['country_code'] ?? '').toString().toLowerCase();
+      final countryCode =
+          (address['country_code'] ?? '').toString().toLowerCase();
       if (countryCode != 'tr') {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Konum Türkiye dışında algılandı. Lütfen konumu manuel seçin.',
-                style: GoogleFonts.poppins(fontSize: 13),
-              ),
-              action: SnackBarAction(label: 'Seç', onPressed: showLocationSelector),
-              duration: const Duration(seconds: 5),
-            behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
+          _showLocationMessage(
+            'Konum Türkiye dışında algılandı. Lütfen konumu manuel seçin.',
+            actionLabel: 'Seç',
+            onAction: showLocationSelector,
           );
         }
         return;
@@ -102,68 +136,118 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
 
       // Türkiye için adres alanlarını topla (öncelik sırasına göre)
       final provinceName = [
-        address['province'], address['state'], address['city'],
-      ].firstWhere((v) => v != null && v.toString().isNotEmpty, orElse: () => '')!.toString();
+        address['province'],
+        address['state'],
+        address['city'],
+      ]
+          .firstWhere((v) => v != null && v.toString().isNotEmpty,
+              orElse: () => '')!
+          .toString();
 
       // İlçe adını temizle (" İlçesi" gibi sonekleri kaldır)
       String rawCounty = [
-        address['county'], address['district'], address['city_district'],
-        address['town'], address['suburb'],
-      ].firstWhere((v) => v != null && v.toString().isNotEmpty, orElse: () => '')!.toString();
+        address['county'],
+        address['district'],
+        address['city_district'],
+        address['town'],
+        address['suburb'],
+      ]
+          .firstWhere((v) => v != null && v.toString().isNotEmpty,
+              orElse: () => '')!
+          .toString();
       rawCounty = rawCounty
-          .replaceAll(RegExp(r'\s*(İlçesi|Ilcesi|District)\s*', caseSensitive: false), '')
+          .replaceAll(
+              RegExp(r'\s*(İlçesi|Ilcesi|District)\s*', caseSensitive: false),
+              '')
           .trim();
 
       await _matchAndSaveLocation(provinceName, rawCounty);
-    } on TimeoutException {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Konum alınamadı (zaman aşımı). GPS\'in açık olduğundan emin olun.',
-              style: GoogleFonts.poppins(fontSize: 13),
-            ),
-            action: SnackBarAction(label: 'Manuel Seç', onPressed: showLocationSelector),
-            duration: const Duration(seconds: 5),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Konum tespit edilemedi. Lütfen manuel seçin.',
-              style: GoogleFonts.poppins(fontSize: 13),
-            ),
-            action: SnackBarAction(label: 'Manuel Seç', onPressed: showLocationSelector),
-            duration: const Duration(seconds: 5),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
-      debugPrint('Auto location error: $e');
+    } on TimeoutException catch (e, stackTrace) {
+      debugPrint('Auto location timeout: $e\n$stackTrace');
+      _showLocationMessage(
+        'Konum alınamadı (zaman aşımı). Açık bir alanda tekrar deneyin.',
+        actionLabel: 'Manuel Seç',
+        onAction: showLocationSelector,
+      );
+    } on DioException catch (e, stackTrace) {
+      debugPrint('Reverse geocoding error: $e\n$stackTrace');
+      _showLocationMessage(
+        'Koordinat alındı ancak adres servisine ulaşılamadı.',
+        actionLabel: 'Tekrar Dene',
+        onAction: () => unawaited(_autoDetectLocation()),
+      );
+    } catch (e, stackTrace) {
+      debugPrint('Auto location error: $e\n$stackTrace');
+      _showLocationMessage(
+        'Konum tespit edilemedi. Lütfen tekrar deneyin veya manuel seçin.',
+        actionLabel: 'Manuel Seç',
+        onAction: showLocationSelector,
+      );
     } finally {
       if (mounted) setState(() => _detectingLocation = false);
     }
   }
 
+  Future<Position> _getPositionWithFallback() async {
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 20),
+        ),
+      );
+    } on TimeoutException {
+      // MIUI/HyperOS iç mekânda yeni GPS sabitlemesini geciktirebilir. Böyle
+      // bir durumda sistemin sakladığı son konum il/ilçe eşleştirmesi için
+      // yeterlidir.
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) return lastKnown;
+      rethrow;
+    }
+  }
+
+  void _showLocationMessage(
+    String message, {
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.poppins(fontSize: 13)),
+        action: actionLabel != null && onAction != null
+            ? SnackBarAction(label: actionLabel, onPressed: onAction)
+            : null,
+        duration: const Duration(seconds: 6),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   // Şehir ve ilçe ismine göre en iyi eşleşmeyi bul ve kaydet
-  Future<void> _matchAndSaveLocation(String provinceName, String countyName) async {
+  Future<void> _matchAndSaveLocation(
+      String provinceName, String countyName) async {
     final notifier = ref.read(salahTimesProvider.notifier);
 
     await notifier.getAllCities(2);
     final state = ref.read(salahTimesProvider);
+    if (state.cityList.isEmpty) {
+      throw StateError('Şehir listesi yüklenemedi.');
+    }
 
     String normalize(String s) => s
         .toLowerCase()
-        .replaceAll('ı', 'i').replaceAll('i̇', 'i')
-        .replaceAll('ö', 'o').replaceAll('ü', 'u')
-        .replaceAll('ş', 's').replaceAll('ğ', 'g')
-        .replaceAll('ç', 'c').replaceAll('â', 'a')
+        .replaceAll('ı', 'i')
+        .replaceAll('i̇', 'i')
+        .replaceAll('ö', 'o')
+        .replaceAll('ü', 'u')
+        .replaceAll('ş', 's')
+        .replaceAll('ğ', 'g')
+        .replaceAll('ç', 'c')
+        .replaceAll('â', 'a')
         .replaceAll(RegExp(r'[^a-z]'), '');
 
     // Puan bazlı en iyi eşleşme — 3: tam, 2: birisi diğerinin başında, 1: içerik
@@ -183,7 +267,10 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
     var matchedCity = state.cityList.first;
     for (final c in state.cityList) {
       final s = score(c.sehirAdi ?? '', normProvince);
-      if (s > bestCityScore) { bestCityScore = s; matchedCity = c; }
+      if (s > bestCityScore) {
+        bestCityScore = s;
+        matchedCity = c;
+      }
     }
 
     // Şehir eşleşmesi sıfırsa kullanıcıya bildir
@@ -195,10 +282,12 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
               'Konum veritabanında bulunamadı ($provinceName). Lütfen manuel seçin.',
               style: GoogleFonts.poppins(fontSize: 13),
             ),
-            action: SnackBarAction(label: 'Manuel Seç', onPressed: showLocationSelector),
+            action: SnackBarAction(
+                label: 'Manuel Seç', onPressed: showLocationSelector),
             duration: const Duration(seconds: 5),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
       }
@@ -207,19 +296,26 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
 
     await notifier.getAllDistricts(matchedCity.sehirId);
     final stateAfter = ref.read(salahTimesProvider);
+    if (stateAfter.districtList.isEmpty) {
+      throw StateError('İlçe listesi yüklenemedi.');
+    }
 
     final normCounty = normalize(countyName);
     var bestDistScore = 0;
     var matchedDistrict = stateAfter.districtList.first;
     for (final d in stateAfter.districtList) {
       final s = score(d.ilceAdi ?? '', normCounty);
-      if (s > bestDistScore) { bestDistScore = s; matchedDistrict = d; }
+      if (s > bestDistScore) {
+        bestDistScore = s;
+        matchedDistrict = d;
+      }
     }
 
     // İlçe eşleşmesi yoksa il merkezi ilçeyi (şehir adıyla aynı) bul
     if (bestDistScore == 0) {
       matchedDistrict = stateAfter.districtList.firstWhere(
-        (d) => normalize(d.ilceAdi ?? '') == normalize(matchedCity.sehirAdi ?? ''),
+        (d) =>
+            normalize(d.ilceAdi ?? '') == normalize(matchedCity.sehirAdi ?? ''),
         orElse: () => stateAfter.districtList.first,
       );
     }
@@ -232,7 +328,8 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
     final state = ref.read(salahTimesProvider);
     final notifier = ref.read(salahTimesProvider.notifier);
     final districtId = overrideDistrictId ?? state.selectedDistrict;
-    final district = await notifier.districtDatabaseHelper.getDistrict(districtId);
+    final district =
+        await notifier.districtDatabaseHelper.getDistrict(districtId);
     if (district == null) return;
     final city = await notifier.cityDatabaseHelper.getCity(district.sehirId);
     final now = DateTime.now();
@@ -245,10 +342,12 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
       lastSelectedCityId: city?.sehirId ?? 0,
       lastSelectedCountryId: city?.ulkeId ?? 0,
     );
-    await notifier.userDiscrictInfoDatabaseHelper.insertOrUpdateDistrictInfo(newInfo);
+    await notifier.userDiscrictInfoDatabaseHelper
+        .insertOrUpdateDistrictInfo(newInfo);
     final miladi = DateTime(now.year, now.month, now.day);
-    await notifier.getSalahTimesForADay(miladi.toString(), newInfo.lastSelectedDistrictId);
-    notifier.init();
+    await notifier.getSalahTimesForADay(
+        miladi.toString(), newInfo.lastSelectedDistrictId);
+    await notifier.init();
   }
 
   String? _activeVakit(SalahTime times) {
@@ -362,11 +461,14 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: ProjectColor.primary)),
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: ProjectColor.primary)),
                   const SizedBox(width: 10),
                   Text('Konum algılanıyor...',
-                      style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600])),
+                      style: GoogleFonts.poppins(
+                          fontSize: 13, color: Colors.grey[600])),
                 ],
               ),
             ),
@@ -377,7 +479,8 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
               padding: const EdgeInsets.only(top: 60),
               child: state.userDistrictInfo == null
                   ? _buildNoLocation()
-                  : const CircularProgressIndicator(color: ProjectColor.primary),
+                  : const CircularProgressIndicator(
+                      color: ProjectColor.primary),
             )
           else if (times != null)
             _buildPrayerList(times, activeVakit, notifPrefs),
@@ -387,8 +490,8 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
     );
   }
 
-  Widget _buildHeader(SalahTimesState state, String currentTime,
-      (String, String)? nextVakit) {
+  Widget _buildHeader(
+      SalahTimesState state, String currentTime, (String, String)? nextVakit) {
     final topPad = MediaQuery.of(context).padding.top + 16;
     return Container(
       width: double.infinity,
@@ -406,9 +509,11 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
       child: Stack(
         children: [
           Positioned(
-            right: -30, top: -30,
+            right: -30,
+            top: -30,
             child: Container(
-              width: 140, height: 140,
+              width: 140,
+              height: 140,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white.withValues(alpha: 0.07),
@@ -416,9 +521,11 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
             ),
           ),
           Positioned(
-            left: -20, bottom: -20,
+            left: -20,
+            bottom: -20,
             child: Container(
-              width: 100, height: 100,
+              width: 100,
+              height: 100,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white.withValues(alpha: 0.07),
@@ -461,24 +568,31 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
                 GestureDetector(
                   onTap: showLocationSelector,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.location_on_rounded, color: Colors.white, size: 16),
+                        const Icon(Icons.location_on_rounded,
+                            color: Colors.white, size: 16),
                         const SizedBox(width: 6),
                         Text(
-                          state.userDistrictInfo?.districtNameTr ?? 'Konum seçin',
+                          state.userDistrictInfo?.districtNameTr ??
+                              'Konum seçin',
                           style: GoogleFonts.poppins(
-                            color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500),
                         ),
                         const SizedBox(width: 6),
-                        const Icon(Icons.expand_more_rounded, color: Colors.white, size: 18),
+                        const Icon(Icons.expand_more_rounded,
+                            color: Colors.white, size: 18),
                       ],
                     ),
                   ),
@@ -496,11 +610,13 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
       child: Row(
         children: [
-          Expanded(child: _buildDateCard(
-              Icons.calendar_today_rounded, 'Miladi', times.miladiTarihUzun ?? '')),
+          Expanded(
+              child: _buildDateCard(Icons.calendar_today_rounded, 'Miladi',
+                  times.miladiTarihUzun ?? '')),
           const SizedBox(width: 12),
-          Expanded(child: _buildDateCard(
-              Icons.nightlight_round, 'Hicri', times.hicriTarihUzun ?? '')),
+          Expanded(
+              child: _buildDateCard(
+                  Icons.nightlight_round, 'Hicri', times.hicriTarihUzun ?? '')),
         ],
       ),
     );
@@ -515,7 +631,8 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
         boxShadow: [
           BoxShadow(
             color: const Color(0xFF0288D1).withValues(alpha: 0.08),
-            blurRadius: 12, offset: const Offset(0, 3),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -535,10 +652,12 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey[500])),
+                    style: GoogleFonts.poppins(
+                        fontSize: 10, color: Colors.grey[500])),
                 Text(value,
                     style: GoogleFonts.poppins(
-                        fontSize: 11, fontWeight: FontWeight.w600,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                         color: const Color(0xFF37474F)),
                     maxLines: 2),
               ],
@@ -552,12 +671,36 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
   Widget _buildPrayerList(
       SalahTime times, String? activeVakit, Map<String, bool> notifPrefs) {
     final prayers = [
-      _PrayerItem(key: 'imsak', icon: Icons.brightness_3_rounded,  label: 'prayImsak',  time: times.imsak  ?? '--:--'),
-      _PrayerItem(key: 'gunes', icon: Icons.wb_sunny_rounded,       label: 'prayGunes',  time: times.gunes  ?? '--:--'),
-      _PrayerItem(key: 'ogle',  icon: Icons.light_mode_rounded,     label: 'prayOgle',   time: times.ogle   ?? '--:--'),
-      _PrayerItem(key: 'ikindi',icon: Icons.wb_twilight_rounded,    label: 'prayIkindi', time: times.ikindi ?? '--:--'),
-      _PrayerItem(key: 'aksam', icon: Icons.nights_stay_rounded,    label: 'prayAksam',  time: times.aksam  ?? '--:--'),
-      _PrayerItem(key: 'yatsi', icon: Icons.bedtime_rounded,        label: 'prayYatsi',  time: times.yatsi  ?? '--:--'),
+      _PrayerItem(
+          key: 'imsak',
+          icon: Icons.brightness_3_rounded,
+          label: 'prayImsak',
+          time: times.imsak ?? '--:--'),
+      _PrayerItem(
+          key: 'gunes',
+          icon: Icons.wb_sunny_rounded,
+          label: 'prayGunes',
+          time: times.gunes ?? '--:--'),
+      _PrayerItem(
+          key: 'ogle',
+          icon: Icons.light_mode_rounded,
+          label: 'prayOgle',
+          time: times.ogle ?? '--:--'),
+      _PrayerItem(
+          key: 'ikindi',
+          icon: Icons.wb_twilight_rounded,
+          label: 'prayIkindi',
+          time: times.ikindi ?? '--:--'),
+      _PrayerItem(
+          key: 'aksam',
+          icon: Icons.nights_stay_rounded,
+          label: 'prayAksam',
+          time: times.aksam ?? '--:--'),
+      _PrayerItem(
+          key: 'yatsi',
+          icon: Icons.bedtime_rounded,
+          label: 'prayYatsi',
+          time: times.yatsi ?? '--:--'),
     ];
 
     return Padding(
@@ -571,7 +714,8 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
     );
   }
 
-  Widget _buildPrayerCard(_PrayerItem prayer, bool isActive, bool notifEnabled) {
+  Widget _buildPrayerCard(
+      _PrayerItem prayer, bool isActive, bool notifEnabled) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.only(bottom: 10),
@@ -593,14 +737,16 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
         child: Row(
           children: [
             Container(
-              width: 44, height: 44,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: isActive
                     ? Colors.white.withValues(alpha: 0.15)
                     : const Color(0xFFE3F2FD),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(prayer.icon, size: 22,
+              child: Icon(prayer.icon,
+                  size: 22,
                   color: isActive ? Colors.white : ProjectColor.primaryDark),
             ),
             const SizedBox(width: 14),
@@ -622,7 +768,9 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
                 ),
                 child: Text('Şu an',
                     style: GoogleFonts.poppins(
-                        fontSize: 10, color: Colors.white, fontWeight: FontWeight.w500)),
+                        fontSize: 10,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500)),
               ),
             Text(
               prayer.time,
@@ -643,7 +791,8 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
                       .read(notificationPrefsProvider.notifier)
                       .toggle(prayer.key);
                 },
-                activeThumbColor: isActive ? Colors.white : ProjectColor.primary,
+                activeThumbColor:
+                    isActive ? Colors.white : ProjectColor.primary,
                 activeTrackColor: isActive
                     ? Colors.white.withValues(alpha: 0.35)
                     : ProjectColor.primary.withValues(alpha: 0.3),
@@ -664,7 +813,8 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
   Widget _buildNoLocation() {
     return Column(
       children: [
-        const Icon(Icons.location_off_rounded, size: 64, color: Color(0xFFB0BEC5)),
+        const Icon(Icons.location_off_rounded,
+            size: 64, color: Color(0xFFB0BEC5)),
         const SizedBox(height: 12),
         Text('Konum seçilmedi',
             style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey[500])),
@@ -682,8 +832,10 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: ProjectColor.primaryDark,
                 side: const BorderSide(color: ProjectColor.primaryDark),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
               ),
             ),
             const SizedBox(width: 10),
@@ -694,8 +846,10 @@ class _PrayerTimesPageState extends ConsumerState<PrayerTimesPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: ProjectColor.primaryDark,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
                 elevation: 0,
               ),
             ),
@@ -712,7 +866,10 @@ class _PrayerItem {
   final String label;
   final String time;
   const _PrayerItem(
-      {required this.key, required this.icon, required this.label, required this.time});
+      {required this.key,
+      required this.icon,
+      required this.label,
+      required this.time});
 }
 
 // ── Konum Seçici Bottom Sheet ────────────────────────────────────────────────
@@ -720,10 +877,12 @@ class _LocationBottomSheet extends ConsumerStatefulWidget {
   final Future<void> Function(BuildContext) onSave;
   final Future<void> Function() onAutoDetect;
 
-  const _LocationBottomSheet({required this.onSave, required this.onAutoDetect});
+  const _LocationBottomSheet(
+      {required this.onSave, required this.onAutoDetect});
 
   @override
-  ConsumerState<_LocationBottomSheet> createState() => _LocationBottomSheetState();
+  ConsumerState<_LocationBottomSheet> createState() =>
+      _LocationBottomSheetState();
 }
 
 class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
@@ -762,7 +921,9 @@ class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: EdgeInsets.only(
-        left: 24, right: 24, top: 24,
+        left: 24,
+        right: 24,
+        top: 24,
         bottom: MediaQuery.of(context).viewInsets.bottom + 32,
       ),
       child: Column(
@@ -784,7 +945,8 @@ class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
               const SizedBox(width: 12),
               Text('Konum Seç',
                   style: GoogleFonts.poppins(
-                      fontSize: 18, fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
                       color: const Color(0xFF1A237E))),
               const Spacer(),
               IconButton(
@@ -813,7 +975,8 @@ class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
                   const SizedBox(width: 8),
                   Text('GPS ile Otomatik Algıla',
                       style: GoogleFonts.poppins(
-                          fontSize: 13, fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                           color: ProjectColor.primaryDark)),
                 ],
               ),
@@ -826,7 +989,8 @@ class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text('veya manuel seç',
-                  style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500])),
+                  style: GoogleFonts.poppins(
+                      fontSize: 11, color: Colors.grey[500])),
             ),
             const Expanded(child: Divider()),
           ]),
@@ -834,11 +998,13 @@ class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
 
           // Ülke
           _buildDropdownField(
-            label: 'Ülke', icon: Icons.flag_rounded,
+            label: 'Ülke',
+            icon: Icons.flag_rounded,
             isLoading: state.countryList.isEmpty,
             value: state.selectedCountry,
             items: state.countryList
-                .map((e) => DropdownMenuItem(value: e.ulkeId, child: Text(e.ulkeAdi ?? "")))
+                .map((e) => DropdownMenuItem(
+                    value: e.ulkeId, child: Text(e.ulkeAdi ?? "")))
                 .toList(),
             onChanged: (v) => _onCountryChanged(v),
           ),
@@ -846,11 +1012,13 @@ class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
 
           // Şehir
           _buildDropdownField(
-            label: 'Şehir', icon: Icons.location_city_rounded,
+            label: 'Şehir',
+            icon: Icons.location_city_rounded,
             isLoading: state.cityList.isEmpty,
             value: state.selectedCity,
             items: state.cityList
-                .map((e) => DropdownMenuItem(value: e.sehirId, child: Text(e.sehirAdi ?? "")))
+                .map((e) => DropdownMenuItem(
+                    value: e.sehirId, child: Text(e.sehirAdi ?? "")))
                 .toList(),
             onChanged: (v) => _onCityChanged(v),
           ),
@@ -858,11 +1026,13 @@ class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
 
           // İlçe
           _buildDropdownField(
-            label: 'İlçe', icon: Icons.place_rounded,
+            label: 'İlçe',
+            icon: Icons.place_rounded,
             isLoading: state.districtList.isEmpty,
             value: state.selectedDistrict,
             items: state.districtList
-                .map((e) => DropdownMenuItem(value: e.ilceId, child: Text(e.ilceAdi ?? "")))
+                .map((e) => DropdownMenuItem(
+                    value: e.ilceId, child: Text(e.ilceAdi ?? "")))
                 .toList(),
             onChanged: (v) => notifier.updateSelectedDistrict(v),
           ),
@@ -883,16 +1053,21 @@ class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
                 backgroundColor: ProjectColor.primaryDark,
                 foregroundColor: Colors.white,
                 disabledBackgroundColor: Colors.grey[300],
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
                 padding: const EdgeInsets.symmetric(vertical: 15),
                 elevation: 0,
               ),
               child: _saving
-                  ? const SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
                   : Text('prayLocationSelect',
-                      style: GoogleFonts.poppins(
-                          fontSize: 15, fontWeight: FontWeight.w600)).tr(),
+                          style: GoogleFonts.poppins(
+                              fontSize: 15, fontWeight: FontWeight.w600))
+                      .tr(),
             ),
           ),
         ],
@@ -914,7 +1089,9 @@ class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
       children: [
         Text(label,
             style: GoogleFonts.poppins(
-                fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500)),
         const SizedBox(height: 4),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -926,8 +1103,11 @@ class _LocationBottomSheetState extends ConsumerState<_LocationBottomSheet> {
           child: isLoading
               ? const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Center(child: SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))),
+                  child: Center(
+                      child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))),
                 )
               : DropdownButtonHideUnderline(
                   child: DropdownButton(

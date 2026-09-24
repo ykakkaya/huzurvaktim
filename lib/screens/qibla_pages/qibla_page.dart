@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' show pi;
 
 import 'package:flutter/material.dart';
@@ -20,37 +19,64 @@ class QiblahCompass extends StatefulWidget {
   State<QiblahCompass> createState() => _QiblahCompassState();
 }
 
-class _QiblahCompassState extends State<QiblahCompass> {
-  final _locationController = StreamController<_LocStatus>.broadcast();
+class _QiblahCompassState extends State<QiblahCompass>
+    with WidgetsBindingObserver {
+  late Future<_LocStatus> _locationStatus;
 
   @override
   void initState() {
     super.initState();
-    _checkLocationStatus();
+    WidgetsBinding.instance.addObserver(this);
+    _locationStatus = _loadLocationStatus();
   }
 
   @override
   void dispose() {
-    _locationController.close();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  Future<void> _checkLocationStatus() async {
-    try {
-      final enabled = await Geolocator.isLocationServiceEnabled();
-      var permission = await Geolocator.checkPermission();
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshLocationStatus();
+    }
+  }
 
-      if (enabled && permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
+  Future<_LocStatus> _loadLocationStatus() async {
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    var permission = await Geolocator.checkPermission();
 
-      if (mounted) {
-        _locationController.sink.add((enabled: enabled, permission: permission));
-      }
-    } catch (e) {
-      if (mounted) {
-        _locationController.sink.addError('Konum servisi hatası: $e');
-      }
+    if (enabled && permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    return (enabled: enabled, permission: permission);
+  }
+
+  void _refreshLocationStatus() {
+    if (!mounted) return;
+    setState(() {
+      _locationStatus = _loadLocationStatus();
+    });
+  }
+
+  Future<void> _openLocationSettings() async {
+    await Geolocator.openLocationSettings();
+    _refreshLocationStatus();
+  }
+
+  Future<void> _openAppSettings() async {
+    await Geolocator.openAppSettings();
+    _refreshLocationStatus();
+  }
+
+  Future<void> _requestPermissionAgain() async {
+    final permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.deniedForever) {
+      await _openAppSettings();
+    } else {
+      _refreshLocationStatus();
     }
   }
 
@@ -60,16 +86,16 @@ class _QiblahCompassState extends State<QiblahCompass> {
       color: ProjectColor.backgroundColor,
       alignment: Alignment.center,
       padding: const EdgeInsets.all(8.0),
-      child: StreamBuilder<_LocStatus>(
-        stream: _locationController.stream,
+      child: FutureBuilder<_LocStatus>(
+        future: _locationStatus,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const LoadingIndicator();
           }
           if (snapshot.hasError) {
             return LocationErrorWidget(
-              error: snapshot.error.toString(),
-              callback: _checkLocationStatus,
+              error: 'Konum servisi hatası: ${snapshot.error}',
+              callback: _refreshLocationStatus,
             );
           }
 
@@ -79,7 +105,7 @@ class _QiblahCompassState extends State<QiblahCompass> {
           if (!loc.enabled) {
             return LocationErrorWidget(
               error: 'Konum servisi kapalı.\nLütfen GPS\'i açın.',
-              callback: _checkLocationStatus,
+              callback: _openLocationSettings,
             );
           }
 
@@ -93,12 +119,13 @@ class _QiblahCompassState extends State<QiblahCompass> {
             case LocationPermission.denied:
               return LocationErrorWidget(
                 error: 'Konum izni reddedildi.',
-                callback: _checkLocationStatus,
+                callback: _requestPermissionAgain,
               );
             case LocationPermission.deniedForever:
               return LocationErrorWidget(
-                error: 'Konum izni kalıcı olarak reddedildi.\nUygulama ayarlarından izin verin.',
-                callback: _checkLocationStatus,
+                error:
+                    'Konum izni kalıcı olarak reddedildi.\nUygulama ayarlarından izin verin.',
+                callback: _openAppSettings,
               );
             default:
               return const SizedBox();
@@ -160,8 +187,7 @@ class _QiblahCompassWidgetState extends State<QiblahCompassWidget> {
         }
         if (snapshot.hasError) {
           return LocationErrorWidget(
-            error:
-                'Pusula sensörü kullanılamıyor.\n${snapshot.error}',
+            error: 'Pusula sensörü kullanılamıyor.\n${snapshot.error}',
             callback: _initStream,
           );
         }

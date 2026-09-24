@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/widgets.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,7 +9,7 @@ import 'package:huzurvakti/service/notification_service.dart';
 import 'package:huzurvakti/service/remote_service/salah_times_api.dart';
 
 const _taskName = 'schedulePrayerNotifications';
-const _taskId   = 'prayer_daily_2am';
+const _taskId = 'prayer_daily_2am';
 
 const _prayerKeys = ['imsak', 'gunes', 'ogle', 'ikindi', 'aksam', 'yatsi'];
 
@@ -19,6 +21,7 @@ void callbackDispatcher() {
 
     try {
       WidgetsFlutterBinding.ensureInitialized();
+      DartPluginRegistrant.ensureInitialized();
 
       // Kayıtlı ilçeyi al
       final districtInfoDb = UserDiscrictInfoDatabaseHelper();
@@ -57,28 +60,29 @@ void callbackDispatcher() {
 
       // Bugünün bildirimlerini zamanla
       await NotificationService.schedulePrayerNotifications(
-        imsak:  times.imsak,
-        gunes:  times.gunes,
-        ogle:   times.ogle,
+        imsak: times.imsak,
+        gunes: times.gunes,
+        ogle: times.ogle,
         ikindi: times.ikindi,
-        aksam:  times.aksam,
-        yatsi:  times.yatsi,
+        aksam: times.aksam,
+        yatsi: times.yatsi,
         enabledPrayers: enabledPrayers,
       );
 
       // Yarının vakitlerini de zamanla (workmanager yedek güvencesi)
       final tomorrow = DateTime(now.year, now.month, now.day + 1);
       final tomorrowKey = tomorrow.toString();
-      final tomorrowTimes = await salahDb.getOne(tomorrowKey, info.lastSelectedDistrictId);
+      final tomorrowTimes =
+          await salahDb.getOne(tomorrowKey, info.lastSelectedDistrictId);
       if (tomorrowTimes != null) {
         await NotificationService.schedulePrayerNotifications(
-          imsak:  tomorrowTimes.imsak,
-          gunes:  tomorrowTimes.gunes,
-          ogle:   tomorrowTimes.ogle,
+          imsak: tomorrowTimes.imsak,
+          gunes: tomorrowTimes.gunes,
+          ogle: tomorrowTimes.ogle,
           ikindi: tomorrowTimes.ikindi,
-          aksam:  tomorrowTimes.aksam,
-          yatsi:  tomorrowTimes.yatsi,
-          date:   tomorrow,
+          aksam: tomorrowTimes.aksam,
+          yatsi: tomorrowTimes.yatsi,
+          date: tomorrow,
           enabledPrayers: enabledPrayers,
         );
       }
@@ -87,7 +91,7 @@ void callbackDispatcher() {
       debugPrint('[BackgroundTask] $stackTrace');
     } finally {
       // Zincir asla kırılmasın — hata olsa bile yarın için kayıt et
-      BackgroundTask.registerNext();
+      await BackgroundTask.registerNext();
     }
 
     return true;
@@ -97,26 +101,37 @@ void callbackDispatcher() {
 class BackgroundTask {
   /// Uygulama ilk açılışında çağrıl
   static Future<void> init() async {
-    await Workmanager().initialize(callbackDispatcher);
-    registerNext();
+    try {
+      await Workmanager().initialize(callbackDispatcher);
+    } catch (e) {
+      debugPrint('[BackgroundTask] initialize failed: $e');
+      return;
+    }
+    await registerNext();
   }
 
-  /// Bir sonraki gece 00:05'e kalan süreyi hesapla ve kayıt et
-  static void registerNext() {
+  /// Bir sonraki gece 00:05'e kalan süreyi hesapla ve kayıt et.
+  /// Bazı ROM'larda (MIUI/HyperOS) WorkManager kaydı hata verebiliyor;
+  /// bu asla uygulamayı düşürmemeli.
+  static Future<void> registerNext() async {
     final now = DateTime.now();
     final nextMidnight = DateTime(now.year, now.month, now.day + 1, 0, 5);
     final delay = nextMidnight.difference(now);
 
-    Workmanager().registerOneOffTask(
-      _taskId,
-      _taskName,
-      initialDelay: delay,
-      existingWorkPolicy: ExistingWorkPolicy.replace,
-      backoffPolicy: BackoffPolicy.exponential,
-      backoffPolicyDelay: const Duration(minutes: 5),
-      constraints: Constraints(
-        networkType: NetworkType.notRequired,
-      ),
-    );
+    try {
+      await Workmanager().registerOneOffTask(
+        _taskId,
+        _taskName,
+        initialDelay: delay,
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+        backoffPolicy: BackoffPolicy.exponential,
+        backoffPolicyDelay: const Duration(minutes: 5),
+        constraints: Constraints(
+          networkType: NetworkType.notRequired,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[BackgroundTask] registerOneOffTask failed: $e');
+    }
   }
 }

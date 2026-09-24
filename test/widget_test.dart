@@ -1,30 +1,68 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:huzurvakti/main.dart';
+import 'package:huzurvakti/providers/quran_provider.dart';
+import 'package:huzurvakti/providers/shared_prefs_provider.dart';
+import 'package:huzurvakti/screens/onboarding_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets('ana ekran sorunsuz acilir', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(preferences),
+          // Testte SQLite acmadan ana ekranin cizilmesini dogrula.
+          quranProvider.overrideWithBuild(
+            (ref, notifier) => QuranState(
+              sureList: const [],
+              ayetList: const [],
+              selectedSure: 0,
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: MyHomePage()),
+      ),
+    );
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text("Kur'an-ı Kerim"), findsOneWidget);
+    expect(find.byType(BottomNavigationBar), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('onboarding tamamlanabilir', (tester) async {
+    var completed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OnboardingPage(
+          onComplete: () async {
+            completed = true;
+          },
+        ),
+      ),
+    );
+
+    expect(find.text('Vakitler hep yanında'), findsOneWidget);
+
+    await tester.tap(find.text('Devam Et'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kıbleyi kolayca bul'), findsOneWidget);
+
+    await tester.tap(find.text('Devam Et'));
+    await tester.pumpAndSettle();
+    expect(find.text('Maneviyatın tek yerde'), findsOneWidget);
+
+    await tester.tap(find.text('Başlayalım'));
+    await tester.pump();
+    expect(completed, isTrue);
+    expect(tester.takeException(), isNull);
   });
 }
